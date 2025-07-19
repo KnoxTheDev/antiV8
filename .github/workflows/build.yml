@@ -35,10 +35,19 @@ jobs:
         shell: powershell
         timeout-minutes: 120
 
+      - name: Run gclient hooks (Important Before Checkout)
+        run: |
+          cd C:\v8
+          python C:\depot_tools\gclient.py runhooks
+        shell: powershell
+
       - name: Checkout Specific V8 Version (e.g., 11.4.183.29)
         run: |
           cd C:\v8
+          git fetch --tags
           git checkout refs/tags/11.4.183.29
+          # Run hooks again to refresh dependencies post-checkout
+          python C:\depot_tools\gclient.py runhooks
         shell: powershell
 
       - name: Configure GN Build Arguments
@@ -55,12 +64,6 @@ jobs:
           target_cpu = ""x64""
           "@ | Out-File -FilePath out\x64.debug\args.gn -Encoding utf8
           Get-Content out\x64.debug\args.gn
-        shell: powershell
-
-      - name: Run gclient hooks
-        run: |
-          cd C:\v8
-          python C:\depot_tools\gclient.py runhooks
         shell: powershell
 
       - name: Generate Ninja Build Files (gn gen)
