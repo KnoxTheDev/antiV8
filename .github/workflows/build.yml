@@ -1,0 +1,103 @@
+name: Build Custom V8 d8 for Windows (with Disassembler)
+
+on:
+  workflow_dispatch: # Allows you to manually trigger this workflow from the GitHub UI
+
+jobs:
+  build-d8:
+    runs-on: windows-latest # Use a Windows runner
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        # This step is here for general good practice, though not strictly needed for just building V8.
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x' # Use a recent Python 3 version, required by depot_tools
+
+      - name: Clone depot_tools and Add to PATH
+        run: |
+          # Clone depot_tools into the root of the C drive for easier path management
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git C:\depot_tools
+
+          # Add depot_tools to the GitHub Actions PATH for the current job
+          echo "C:\depot_tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          # Set DEPOT_TOOLS_WIN_TOOLCHAIN=0 to avoid issues with Visual Studio toolchain detection
+          # This tells depot_tools to use the existing VS installation on the runner.
+          echo "DEPOT_TOOLS_WIN_TOOLCHAIN=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+        shell: powershell # Ensure this step runs in PowerShell
+
+      - name: Fetch V8 Source Code
+        run: |
+          # Change to the C drive root before fetching V8
+          cd C:\
+          # Fetch the V8 source code. This is very large and takes a long time.
+          # It will create a 'v8' directory at C:\v8
+          fetch v8
+
+        shell: powershell # Ensure this step runs in PowerShell
+        timeout-minutes: 120 # Give it 2 hours, but it might still timeout or run out of disk space
+
+      - name: Configure V8 Build Arguments
+        run: |
+          # Navigate into the V8 source directory
+          cd C:\v8
+
+          # Create the output directory for the debug build
+          mkdir out\x64.debug
+
+          # Write the build arguments directly to args.gn
+          # These flags enable the disassembler and other debug features.
+          @"
+          is_debug = true
+          is_component_build = true
+          v8_enable_disassembler = true
+          v8_enable_object_print = true
+          v8_enable_verify_heap = true
+          v8_monolithic = true
+          "@ | Out-File -FilePath out\x64.debug\args.gn -Encoding utf8
+
+          # Optional: Display the content of args.gn to verify
+          Get-Content out\x64.debug\args.gn
+
+        shell: powershell # Ensure this step runs in PowerShell
+
+      - name: Run gclient hooks (important for dependencies)
+        run: |
+          # Navigate into the V8 source directory
+          cd C:\v8
+          # Ensure all hooks and dependencies are resolved.
+          # Sometimes 'fetch v8' doesn't complete this entirely in CI environments.
+          python C:\depot_tools\gclient.py runhooks
+
+        shell: powershell # Ensure this step runs in PowerShell
+
+      - name: Build V8 d8 Executable
+        run: |
+          # Navigate into the V8 source directory
+          cd C:\v8
+          # Build the d8 (V8 shell) executable using autoninja.
+          # This is the longest and most resource-intensive step.
+          C:\depot_tools\autoninja.bat -C out\x64.debug d8
+
+        shell: powershell # Ensure this step runs in PowerShell
+        timeout-minutes: 240 # Give it 4 hours, but it might still timeout
+
+      - name: Locate and List d8 executable
+        run: |
+          # List the contents of the debug build directory to confirm d8.exe was created
+          Get-ChildItem -Path C:\v8\out\x64.debug -Filter "d8.exe" -Recurse
+
+        shell: powershell # Ensure this step runs in PowerShell
+
+      - name: Upload d8 executable as an Artifact (Optional)
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-d8-windows-x64-debug
+          path: C:\v8\out\x64.debug\d8.exe
+          retention-days: 7 # How long to keep the artifact
+        if: success() # Only upload if the build was successful
