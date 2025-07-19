@@ -26,8 +26,8 @@ jobs:
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git C:\depot_tools
           "C:\depot_tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          # Enable Windows CIPD-based toolchain to fetch clang-format and other buildtools
-          "DEPOT_TOOLS_WIN_TOOLCHAIN=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Do NOT download remote toolchain; use locally installed Visual Studio
+          "DEPOT_TOOLS_WIN_TOOLCHAIN=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Fetch V8 Source Code
         shell: powershell
