@@ -62,6 +62,7 @@ jobs:
           v8_enable_verify_heap = true
           v8_monolithic = true
           target_cpu = ""x64""
+          use_clang_format = false
           "@ | Out-File -FilePath out\x64.debug\args.gn -Encoding utf8
           Get-Content out\x64.debug\args.gn
         shell: powershell
