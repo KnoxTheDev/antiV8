@@ -21,90 +21,74 @@ jobs:
           python -m pip install --upgrade pip
           pip install httplib2
 
-      - name: Clone depot_tools and Set Up Environment
+      - name: Clone depot_tools and Configure Environment
+        shell: powershell
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git C:\depot_tools
-          echo "C:\depot_tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          echo "DEPOT_TOOLS_WIN_TOOLCHAIN=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        shell: powershell
-
-      - name: Configure gclient to Skip Clang-Format
-        run: |
-          cd C:\
-          '@
-solutions = [
-  {
-    "name": "v8",
-    "url": "https://chromium.googlesource.com/v8/v8",
-    "managed": False,
-    "custom_deps": {
-      "v8/buildtools/win/clang-format.exe": None
-    },
-  },
-]
-'@ | Out-File -FilePath .gclient -Encoding ascii
-        shell: powershell
+          "C:\depot_tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "DEPOT_TOOLS_WIN_TOOLCHAIN=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Fetch V8 Source Code
+        shell: powershell
         run: |
           cd C:\
           fetch v8
-        shell: powershell
         timeout-minutes: 120
 
-      - name: Run gclient hooks
+      - name: Run gclient hooks (before checkout)
+        shell: powershell
         run: |
           cd C:\v8
           python C:\depot_tools\gclient.py runhooks
-        shell: powershell
 
-      - name: Checkout Specific V8 Version (e.g., 11.4.183.29)
+      - name: Checkout Specific V8 Version
+        shell: powershell
         run: |
           cd C:\v8
           git fetch --tags
           git checkout refs/tags/11.4.183.29
+          # Refresh dependencies after checkout
           python C:\depot_tools\gclient.py runhooks
-        shell: powershell
 
       - name: Configure GN Build Arguments
+        shell: powershell
         run: |
           cd C:\v8
-          mkdir out\x64.debug
+          mkdir -Force out\x64.debug
           @"
-is_debug = true
-is_component_build = true
-v8_enable_disassembler = true
-v8_enable_object_print = true
-v8_enable_verify_heap = true
-v8_monolithic = true
-target_cpu = ""x64""
-use_clang_format = false
-"@ | Out-File -FilePath out\x64.debug\args.gn -Encoding utf8
+          is_debug = true
+          is_component_build = true
+          v8_enable_disassembler = true
+          v8_enable_object_print = true
+          v8_enable_verify_heap = true
+          v8_monolithic = true
+          target_cpu = "x64"
+          use_clang_format = false
+          "@ | Out-File -FilePath out\x64.debug\args.gn -Encoding utf8
           Get-Content out\x64.debug\args.gn
-        shell: powershell
 
-      - name: Generate Ninja Build Files (gn gen)
+      - name: Generate Ninja Build Files
+        shell: powershell
         run: |
           cd C:\v8
           gn gen out\x64.debug
-        shell: powershell
 
       - name: Build d8 Executable
+        shell: powershell
         run: |
           cd C:\v8
           C:\depot_tools\autoninja.bat -C out\x64.debug d8
-        shell: powershell
         timeout-minutes: 240
 
       - name: Locate and List d8.exe
+        shell: powershell
         run: |
           Get-ChildItem -Path C:\v8\out\x64.debug -Filter "d8.exe" -Recurse
-        shell: powershell
 
       - name: Upload d8.exe as Artifact
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: v8-d8-windows-x64-debug
           path: C:\v8\out\x64.debug\d8.exe
           retention-days: 7
-        if: success()
