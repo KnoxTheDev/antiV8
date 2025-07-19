@@ -8,61 +8,58 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install Python Dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install httplib2
 
-      - name: Clone depot_tools and Configure Environment
+      - name: Clone depot_tools
         shell: powershell
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git C:\depot_tools
           "C:\depot_tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           "DEPOT_TOOLS_WIN_TOOLCHAIN=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "GCLIENT_DO_NOT_TRACK=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "V8_EMBEDDER_STRING=custom-v8" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Clone V8 from GitHub Mirror
+      - name: Manually create .gclient and clone V8
         shell: powershell
         run: |
-          git clone https://github.com/v8/v8.git C:\v8
-          cd C:\v8
-          git checkout 11.4.183.29
-
-      - name: Create .gclient Configuration
-        shell: powershell
-        run: |
-          Set-Content -Path C:\.gclient -Value @"
+          cd C:\
+          @"
           solutions = [
             {
               "name": "v8",
-              "url": "https://github.com/v8/v8.git",
+              "url": "https://chromium.googlesource.com/v8/v8.git",
               "deps_file": "DEPS",
               "managed": False,
               "custom_deps": {},
             },
           ]
-          "@
+          "@ | Out-File -Encoding utf8 -FilePath C:\.gclient
+          git clone https://chromium.googlesource.com/v8/v8.git C:\v8
+          cd C:\v8
+          git fetch origin refs/tags/11.4.183.29:refs/tags/11.4.183.29
+          git checkout 11.4.183.29
 
-      - name: Sync V8 Dependencies
+      - name: Sync dependencies with gclient
         shell: powershell
         run: |
           cd C:\v8
-          C:\depot_tools\gclient.py sync
+          C:\depot_tools\gclient sync --no-history
 
-      - name: Run gclient hooks (after sync)
+      - name: Run hooks
         shell: powershell
         run: |
           cd C:\v8
           python C:\depot_tools\gclient.py runhooks
 
-      - name: Configure GN Build Arguments
+      - name: Configure GN build (with disassembler)
         shell: powershell
         run: |
           cd C:\v8
@@ -74,30 +71,31 @@ jobs:
           v8_enable_object_print = true
           v8_enable_verify_heap = true
           v8_monolithic = true
-          target_cpu = "x64"
+          v8_use_external_startup_data = false
+          target_cpu = ""x64""
           use_clang_format = false
           "@ | Out-File -FilePath out\x64.debug\args.gn -Encoding utf8
           Get-Content out\x64.debug\args.gn
 
-      - name: Generate Ninja Build Files
+      - name: Generate Ninja build files
         shell: powershell
         run: |
           cd C:\v8
           gn gen out\x64.debug
 
-      - name: Build d8 Executable
+      - name: Build d8 using autoninja
         shell: powershell
         run: |
           cd C:\v8
-          C:\depot_tools\autoninja.bat -C out\x64.debug d8
-        timeout-minutes: 240
+          autoninja -C out\x64.debug d8
+        timeout-minutes: 180
 
-      - name: Locate and List d8.exe
+      - name: List d8.exe
         shell: powershell
         run: |
           Get-ChildItem -Path C:\v8\out\x64.debug -Filter "d8.exe" -Recurse
 
-      - name: Upload d8.exe as Artifact
+      - name: Upload d8.exe
         uses: actions/upload-artifact@v4
         if: success()
         with:
